@@ -1,0 +1,85 @@
+---
+title: "Analysis"
+output: html_document
+date: "2025-03-20"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+```{r cars}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+
+# Load the datasets
+income_data <- read.csv("Toronto_Income.csv", check.names = FALSE, stringsAsFactors = FALSE)
+diabetes_data <- read.csv("1_AHD_Diabetes_FY2022_TOR_d2023.csv", check.names = FALSE, stringsAsFactors = FALSE)
+
+# Standardizing column names by trimming extra spaces
+colnames(income_data) <- trimws(colnames(income_data))
+colnames(diabetes_data) <- trimws(colnames(diabetes_data))
+
+# Manually select the correct columns
+neighbourhood_column_income <- "Neighbourhood Name"
+neighbourhood_column_diabetes <- "Neighbourhood Name"
+
+low_income_column <- "POPULATION IN LOW-INCOME BASED ON LOW-INCOME MEASURE - AFTER-TAX (LIM-AT) In LIM-AT (%)"
+diabetes_rate_column <- "Age-Standardized † rate (/100) of Diabetes 2021/22, All Ages 20+ Total"
+
+# Select relevant columns
+income_selected <- income_data %>%
+  select(all_of(neighbourhood_column_income), all_of(low_income_column)) %>%
+  rename(Neighbourhood = all_of(neighbourhood_column_income),
+         Low_Income_Percentage = all_of(low_income_column))
+
+diabetes_selected <- diabetes_data %>%
+  select(all_of(neighbourhood_column_diabetes), all_of(diabetes_rate_column)) %>%
+  rename(Neighbourhood = all_of(neighbourhood_column_diabetes),
+         Diabetes_Rate = all_of(diabetes_rate_column))
+
+# Convert columns to numeric (removing non-numeric characters if needed)
+income_selected$Low_Income_Percentage <- as.numeric(gsub("[^0-9.]", "", income_selected$Low_Income_Percentage))
+diabetes_selected$Diabetes_Rate <- as.numeric(gsub("[^0-9.]", "", diabetes_selected$Diabetes_Rate))
+
+# Merging datasets on Neighbourhood Name
+merged_data <- inner_join(income_selected, diabetes_selected, by = "Neighbourhood")
+
+# Checking for missing values
+print(paste("Total missing values:", sum(is.na(merged_data))))
+
+# Compute correlation (only if data is numeric and has no missing values)
+if (sum(is.na(merged_data$Low_Income_Percentage)) == 0 & sum(is.na(merged_data$Diabetes_Rate)) == 0) {
+  correlation <- cor(merged_data$Low_Income_Percentage, merged_data$Diabetes_Rate, use = "complete.obs")
+} else {
+  correlation <- NA
+  print("Warning: Missing values in dataset, correlation may not be accurate.")
+}
+
+# Fancy scatter plot
+ggplot(merged_data, aes(x = Low_Income_Percentage, y = Diabetes_Rate)) +
+  geom_point(aes(color = Low_Income_Percentage), size = 4, alpha = 0.8) +  # Stylish dots with color gradient
+  scale_color_gradient(low = "blue", high = "red") +  # Gradient from blue to red
+  geom_smooth(method = "lm", se = TRUE, color = "black", linetype = "dashed", linewidth = 1.2) +  # Use linewidth instead of size
+  annotate("text", x = max(merged_data$Low_Income_Percentage) - 5, 
+           y = max(merged_data$Diabetes_Rate) - 1, 
+           label = paste("Correlation:", round(correlation, 2)), 
+           size = 6, fontface = "bold", color = "black") +  # Add correlation annotation
+  labs(title = "Income Level vs. Diabetes Rate",
+       subtitle = "Correlation between neighborhood income and diabetes prevalence",
+       x = "Low Income Percentage",
+       y = "Diabetes Rate (%)",
+       color = "Low Income %") +
+  theme_minimal(base_size = 15) +  # Clean modern theme
+  theme(
+    plot.title = element_text(face = "bold", size = 20, hjust = 0.5),
+    plot.subtitle = element_text(size = 15, hjust = 0.5),
+    axis.title = element_text(face = "bold"),
+    legend.position = "right",
+    legend.title = element_text(face = "bold")
+  )
+
+```
+
