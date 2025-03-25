@@ -6,6 +6,7 @@ date: "2025-03-20"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
 ```
 
 ## R Markdown
@@ -100,6 +101,118 @@ ggplot(merged_data, aes(x = Low_Income_Percentage, y = Diabetes_Rate)) +
     legend.position = "right",
     legend.title = element_text(face = "bold")
   )
+
+```
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(knitr)
+
+# Create summary statistics
+summary_table <- merged_data %>%
+  summarise(
+    `Number of Neighborhoods` = n(),
+    `Mean Low Income (%)` = round(mean(Low_Income_Percentage, na.rm = TRUE), 1),
+    `Median Low Income (%)` = round(median(Low_Income_Percentage, na.rm = TRUE), 1),
+    `Min Low Income (%)` = round(min(Low_Income_Percentage, na.rm = TRUE), 1),
+    `Max Low Income (%)` = round(max(Low_Income_Percentage, na.rm = TRUE), 1),
+    `Mean Diabetes Rate (%)` = round(mean(Diabetes_Rate, na.rm = TRUE), 1),
+    `Median Diabetes Rate (%)` = round(median(Diabetes_Rate, na.rm = TRUE), 1),
+    `Min Diabetes Rate (%)` = round(min(Diabetes_Rate, na.rm = TRUE), 1),
+    `Max Diabetes Rate (%)` = round(max(Diabetes_Rate, na.rm = TRUE), 1)
+  )
+
+# Print nicely formatted table
+kable(summary_table, caption = "Summary of Low Income and Diabetes Rate Across Toronto Neighborhoods")
+
+```
+
+```{r}
+# Top 10 diabetes rates
+top_diabetes <- diabetes_selected %>%
+  arrange(desc(Diabetes_Rate)) %>%
+  slice(1:10)
+
+ggplot(top_diabetes, aes(x = reorder(Neighbourhood, Diabetes_Rate), y = Diabetes_Rate)) +
+  geom_segment(aes(xend = Neighbourhood, y = 0, yend = Diabetes_Rate), color = "grey") +
+  geom_point(color = "darkred", size = 4) +
+  coord_flip() +
+  labs(title = "Top 10 Neighborhoods by Diabetes Rate",
+       x = "Neighborhood",
+       y = "Diabetes Rate (%)") +
+  theme_minimal(base_size = 14)
+
+```
+
+```{r}
+# Top 10 neighborhoods with highest low-income percentage
+top_low_income <- income_selected %>%
+  arrange(desc(Low_Income_Percentage)) %>%
+  slice(1:10)
+
+ggplot(top_low_income, aes(x = reorder(Neighbourhood, Low_Income_Percentage), y = Low_Income_Percentage)) +
+  geom_segment(aes(xend = Neighbourhood, y = 0, yend = Low_Income_Percentage), color = "grey") +
+  geom_point(color = "steelblue", size = 4) +
+  coord_flip() +
+  labs(title = "Top 10 Neighborhoods with Highest Low-Income Percentage",
+       x = "Neighborhood",
+       y = "Low-Income Percentage (%)") +
+  theme_minimal(base_size = 14)
+
+```
+```{r}
+# Calculate mean values to use as quadrant dividers
+mean_income <- mean(merged_data$Low_Income_Percentage, na.rm = TRUE)
+mean_diabetes <- mean(merged_data$Diabetes_Rate, na.rm = TRUE)
+
+# Base scatter plot with quadrant lines
+ggplot(merged_data, aes(x = Low_Income_Percentage, y = Diabetes_Rate)) +
+  geom_point(aes(color = Diabetes_Rate), size = 4, alpha = 0.8) +
+  scale_color_gradient(low = "blue", high = "red") +
+
+  # Add vertical and horizontal lines to divide into quadrants
+  geom_vline(xintercept = mean_income, linetype = "dashed", color = "black", linewidth = 1) +
+  geom_hline(yintercept = mean_diabetes, linetype = "dashed", color = "black", linewidth = 1) +
+
+  # Add quadrant labels
+  annotate("text", x = mean_income - 5, y = mean_diabetes + 2, label = "Low Low-Income Percentage\nHigh Diabetes Rates", size = 5, hjust = 1, fontface = "bold") +
+  annotate("text", x = mean_income + 5, y = mean_diabetes + 2, label = "High Low-Income Percentage\nHigh Diabetes Rates", size = 5, hjust = 0, fontface = "bold") +
+  annotate("text", x = mean_income - 5, y = mean_diabetes - 2, label = "Low Low-Income Percentage\nLow Diabetes Rates", size = 5, hjust = 1, fontface = "bold") +
+  annotate("text", x = mean_income + 5, y = mean_diabetes - 2, label = "High Low-Income Percentage\nLow Diabetes Rates", size = 5, hjust = 0, fontface = "bold") +
+
+  labs(title = "Diabetes vs. Income by Neighborhood",
+       subtitle = "Quadrants Highlight Risk and Resilience Patterns",
+       x = "Low Income Percentage",
+       y = "Diabetes Rate (%)",
+       color = "Diabetes %") +
+  theme_minimal(base_size = 15) +
+  theme(
+    plot.title = element_text(face = "bold", size = 18, hjust = 0.5),
+    plot.subtitle = element_text(size = 14, hjust = 0.5),
+    legend.position = "right"
+  )
+
+```
+```{r}
+# Calculate mean thresholds
+mean_income <- mean(merged_data$Low_Income_Percentage, na.rm = TRUE)
+mean_diabetes <- mean(merged_data$Diabetes_Rate, na.rm = TRUE)
+
+# Create quadrant labels
+merged_data$Quadrant <- with(merged_data, ifelse(
+  Low_Income_Percentage >= mean_income & Diabetes_Rate >= mean_diabetes, "Low Income + High Diabetes",
+  ifelse(Low_Income_Percentage < mean_income & Diabetes_Rate >= mean_diabetes, "High Income + High Diabetes",
+  ifelse(Low_Income_Percentage >= mean_income & Diabetes_Rate < mean_diabetes, "Low Income + Low Diabetes",
+         "High Income + Low Diabetes"))))
+
+# Group by quadrant and list neighborhoods
+library(dplyr)
+neighborhoods_by_quadrant <- merged_data %>%
+  group_by(Quadrant) %>%
+  summarise(Neighborhoods = paste(Neighbourhood, collapse = ", "))
+
+# Print results
+print(neighborhoods_by_quadrant)
 
 ```
 
