@@ -9,210 +9,477 @@ knitr::opts_chunk$set(echo = FALSE)
 knitr::opts_chunk$set(warning = FALSE)
 ```
 
-## R Markdown
-```{r, echo=FALSE}
-# Load necessary libraries
-library(ggplot2)
+```{r}
+# ---- STEP 0: Load Required Packages ----
+library(readr)
 library(dplyr)
+library(janitor)  # Clean column names
+library(ggplot2)
+library(tidyr)
 
-# Load the datasets
-income_data <- read.csv("Toronto_Income.csv", check.names = FALSE, stringsAsFactors = FALSE)
-diabetes_data <- read.csv("1_AHD_Diabetes_FY2022_TOR_d2023.csv", check.names = FALSE, stringsAsFactors = FALSE)
+# ---- STEP 1: Load and Clean Data ----
+# Load income data
+income_data <- read_csv("Toronto_Income.csv")
 
-# Ensure column names are trimmed and clean
+# Load diabetes data
+diabetes_data <- read_csv("1_AHD_Diabetes_FY2022_TOR_d2023.csv")
+
+
+# ---- STEP 1: Clean and Trim Column Names ----
+
+# Clean and trim column names for both datasets
 colnames(income_data) <- trimws(colnames(income_data))
 colnames(diabetes_data) <- trimws(colnames(diabetes_data))
 
-# Print column names for debugging
-print("Income Data Columns:")
+# Make column names unique to avoid duplicates
+colnames(income_data) <- make.names(colnames(income_data), unique = TRUE)
+colnames(diabetes_data) <- make.names(colnames(diabetes_data), unique = TRUE)
+
+# Print trimmed and unique column names to check if they are correct
+print("Income Data Columns (Trimmed and Unique):")
 print(colnames(income_data))
 
-print("Diabetes Data Columns:")
+print("Diabetes Data Columns (Trimmed and Unique):")
 print(colnames(diabetes_data))
 
-# Manually verify the correct column names and update here
-neighbourhood_column_income <- "Neighbourhood Name"
-neighbourhood_column_diabetes <- "Neighbourhood Name"
-low_income_column <- "POPULATION IN LOW-INCOME BASED ON LOW-INCOME MEASURE - AFTER-TAX (LIM-AT) In LIM-AT (%)"
-diabetes_rate_column <- "Age-Standardized † rate (/100) of Diabetes 2021/22, All Ages 20+ Total"
+# ---- STEP 2: Rename Relevant Columns for Consistency ----
+# Rename columns explicitly to ensure correct merging
+colnames(income_data)[colnames(income_data) == "Neighbourhood.Name"] <- "Neighbourhood"
+colnames(diabetes_data)[colnames(diabetes_data) == "Neighbourhood.Name"] <- "Neighbourhood"
 
-# Ensure columns exist before selection
-if (!(neighbourhood_column_income %in% colnames(income_data))) {
-  stop("Error: Neighbourhood column not found in income_data!")
-}
-if (!(neighbourhood_column_diabetes %in% colnames(diabetes_data))) {
-  stop("Error: Neighbourhood column not found in diabetes_data!")
-}
-if (!(low_income_column %in% colnames(income_data))) {
-  stop("Error: Low income column not found in income_data!")
-}
-if (!(diabetes_rate_column %in% colnames(diabetes_data))) {
-  stop("Error: Diabetes rate column not found in diabetes_data!")
-}
+# ---- STEP 3: Fix Potential Mismatches ----
+# Remove any trailing/leading spaces in 'Neighbourhood' to prevent mismatches
+income_data$Neighbourhood <- trimws(income_data$Neighbourhood)
+diabetes_data$Neighbourhood <- trimws(diabetes_data$Neighbourhood)
 
-# Select relevant columns using vars()
-income_selected <- income_data %>%
-  select_at(vars(neighbourhood_column_income, low_income_column)) %>%
-  rename(Neighbourhood = !!neighbourhood_column_income,
-         Low_Income_Percentage = !!low_income_column)
-
-diabetes_selected <- diabetes_data %>%
-  select_at(vars(neighbourhood_column_diabetes, diabetes_rate_column)) %>%
-  rename(Neighbourhood = !!neighbourhood_column_diabetes,
-         Diabetes_Rate = !!diabetes_rate_column)
-
-# Convert columns to numeric (removing non-numeric characters if needed)
-income_selected$Low_Income_Percentage <- as.numeric(gsub("[^0-9.]", "", income_selected$Low_Income_Percentage))
-diabetes_selected$Diabetes_Rate <- as.numeric(gsub("[^0-9.]", "", diabetes_selected$Diabetes_Rate))
-
-# Merge datasets on Neighbourhood Name
-merged_data <- inner_join(income_selected, diabetes_selected, by = "Neighbourhood")
-
-# Check for missing values
-print(paste("Total missing values:", sum(is.na(merged_data))))
-
-# Compute correlation (only if data is numeric and has no missing values)
-if (sum(is.na(merged_data$Low_Income_Percentage)) == 0 & sum(is.na(merged_data$Diabetes_Rate)) == 0) {
-  correlation <- cor(merged_data$Low_Income_Percentage, merged_data$Diabetes_Rate, use = "complete.obs")
-} else {
-  correlation <- NA
-  print("Warning: Missing values in dataset, correlation may not be accurate.")
-}
-
-# Scatter plot
-ggplot(merged_data, aes(x = Low_Income_Percentage, y = Diabetes_Rate)) +
-  geom_point(aes(color = Low_Income_Percentage), size = 4, alpha = 0.8) +  
-  scale_color_gradient(low = "blue", high = "red") +  
-  geom_smooth(method = "lm", se = TRUE, color = "black", linetype = "dashed", linewidth = 1.2) +  
-  annotate("text", x = max(merged_data$Low_Income_Percentage, na.rm = TRUE) - 5, 
-           y = max(merged_data$Diabetes_Rate, na.rm = TRUE) - 1, 
-           label = paste("Correlation:", round(correlation, 2)), 
-           size = 6, fontface = "bold", color = "black") +  
-  labs(title = "Income Level vs. Diabetes Rate",
-       subtitle = "Correlation between neighborhood income and diabetes prevalence",
-       x = "Low Income Percentage",
-       y = "Diabetes Rate (%)",
-       color = "Low Income %") +
-  theme_minimal(base_size = 15) +  
-  theme(
-    plot.title = element_text(face = "bold", size = 20, hjust = 0.5),
-    plot.subtitle = element_text(size = 15, hjust = 0.5),
-    axis.title = element_text(face = "bold"),
-    legend.position = "right",
-    legend.title = element_text(face = "bold")
-  )
+# Remove rows with "City of Toronto" to avoid mismatches
+income_data <- income_data[income_data$Neighbourhood != "City of Toronto", ]
+diabetes_data <- diabetes_data[diabetes_data$Neighbourhood != "City of Toronto", ]
 
 ```
-```{r}
-# Load necessary libraries
-library(dplyr)
+
+## R Markdown
+```{r, echo=FALSE}
+library(ggplot2)
 library(knitr)
+library(dplyr)
+library(tidyr)
 
-# Create summary statistics
-summary_table <- merged_data %>%
-  summarise(
-    `Number of Neighborhoods` = n(),
-    `Mean Low Income (%)` = round(mean(Low_Income_Percentage, na.rm = TRUE), 1),
-    `Median Low Income (%)` = round(median(Low_Income_Percentage, na.rm = TRUE), 1),
-    `Min Low Income (%)` = round(min(Low_Income_Percentage, na.rm = TRUE), 1),
-    `Max Low Income (%)` = round(max(Low_Income_Percentage, na.rm = TRUE), 1),
-    `Mean Diabetes Rate (%)` = round(mean(Diabetes_Rate, na.rm = TRUE), 1),
-    `Median Diabetes Rate (%)` = round(median(Diabetes_Rate, na.rm = TRUE), 1),
-    `Min Diabetes Rate (%)` = round(min(Diabetes_Rate, na.rm = TRUE), 1),
-    `Max Diabetes Rate (%)` = round(max(Diabetes_Rate, na.rm = TRUE), 1)
+# ---- STEP 1: Define Relevant Columns for LIM-AT ----
+lim_population_cols <- c(
+  "POPULATION.IN.LOW.INCOME.BASED.ON.LOW.INCOME.MEASURE...AFTER.TAX..LIM.AT..Total...Population.to.whom.Low.Income.Concepts.Are.Applicable..18.64.yrs.",
+  "POPULATION.IN.LOW.INCOME.BASED.ON.LOW.INCOME.MEASURE...AFTER.TAX..LIM.AT..Total...Population.to.whom.Low.Income.Concepts.Are.Applicable..65..yrs."
+)
+
+lim_in_limat_cols <- c(
+  "POPULATION.IN.LOW.INCOME.BASED.ON.LOW.INCOME.MEASURE...AFTER.TAX..LIM.AT..In.LIM.AT...18.64.yrs.",
+  "POPULATION.IN.LOW.INCOME.BASED.ON.LOW.INCOME.MEASURE...AFTER.TAX..LIM.AT..In.LIM.AT...65..yrs."
+)
+
+
+# ---- STEP 2: Extract and Clean Data ----
+lim_data <- income_data %>%
+  select(Neighbourhood, all_of(lim_population_cols), all_of(lim_in_limat_cols)) %>%
+  drop_na()
+
+# Rename columns for easier processing
+colnames(lim_data) <- c(
+  "Neighbourhood",
+  "pop_18_64", "pop_65_plus",
+  "low_income_18_64", "low_income_65_plus"
+)
+
+# ---- STEP 3: Calculate Age-Specific Low-Income Rates ----
+lim_data <- lim_data %>%
+  mutate(
+    low_income_rate_18_64 = (low_income_18_64 / pop_18_64) * 100,
+    low_income_rate_65_plus = (low_income_65_plus / pop_65_plus) * 100,
+    
+    # Total population 18+ for age standardization
+    total_pop_18_plus = pop_18_64 + pop_65_plus,
+    
+    # Proportion of each group in the total population
+    prop_18_64 = pop_18_64 / total_pop_18_plus,
+    prop_65_plus = pop_65_plus / total_pop_18_plus,
+    
+    # Corrected ASR LIM-AT Calculation
+    asr_lim_at = (low_income_rate_18_64 * prop_18_64) + (low_income_rate_65_plus * prop_65_plus)
   )
 
-# Print nicely formatted table
-kable(summary_table, caption = "Summary of Low Income and Diabetes Rate Across Toronto Neighborhoods")
+# ---- STEP 4: Summary of Corrected LIM-AT ----
+lim_asr_summary <- lim_data %>%
+  select(Neighbourhood, asr_lim_at) %>%
+  arrange(desc(asr_lim_at))
+
+# ---- STEP 5: Select Correct Diabetes ASR ----
+diabetes_selected <- diabetes_data %>%
+  select(
+    Neighbourhood,
+    diabetes_asr = "Age.Standardized...rate...100..of.Diabetes.2021.22..All.Ages.20..Total"
+  ) %>%
+  drop_na()
+
+
+# ---- STEP 6: Merge Corrected LIM-AT and Diabetes ASR ----
+merged_data_asr <- inner_join(lim_asr_summary, diabetes_selected, by = "Neighbourhood")
+
+# ---- STEP 7: Summary of Merged Data ----
+summary(merged_data_asr)
 
 ```
 
 ```{r}
-# Top 10 diabetes rates
-top_diabetes <- diabetes_selected %>%
-  arrange(desc(Diabetes_Rate)) %>%
-  slice(1:10)
+# Load required packages
+library(ggplot2)
+library(knitr)
+library(dplyr)
+library(tidyr)
 
-ggplot(top_diabetes, aes(x = reorder(Neighbourhood, Diabetes_Rate), y = Diabetes_Rate)) +
-  geom_segment(aes(xend = Neighbourhood, y = 0, yend = Diabetes_Rate), color = "grey") +
-  geom_point(color = "darkred", size = 4) +
-  coord_flip() +
-  labs(title = "Top 10 Neighborhoods by Diabetes Rate",
-       x = "Neighborhood",
-       y = "Diabetes Rate (%)") +
-  theme_minimal(base_size = 14)
+# ---- STEP 8: Summary Statistics ----
+# Summary for merged_data_asr
+summary_stats <- merged_data_asr %>%
+  summarise(
+    min_lim_at = min(asr_lim_at, na.rm = TRUE),
+    q1_lim_at = quantile(asr_lim_at, 0.25, na.rm = TRUE),
+    median_lim_at = median(asr_lim_at, na.rm = TRUE),
+    mean_lim_at = mean(asr_lim_at, na.rm = TRUE),
+    q3_lim_at = quantile(asr_lim_at, 0.75, na.rm = TRUE),
+    max_lim_at = max(asr_lim_at, na.rm = TRUE),
+    min_diabetes = min(diabetes_asr, na.rm = TRUE),
+    q1_diabetes = quantile(diabetes_asr, 0.25, na.rm = TRUE),
+    median_diabetes = median(diabetes_asr, na.rm = TRUE),
+    mean_diabetes = mean(diabetes_asr, na.rm = TRUE),
+    q3_diabetes = quantile(diabetes_asr, 0.75, na.rm = TRUE),
+    max_diabetes = max(diabetes_asr, na.rm = TRUE)
+  )
 
-```
+# ---- STEP 9: Box Plot for LIM-AT and Diabetes ASR ----
+# Rename for cleaner labels
+merged_data_melt <- merged_data_asr %>%
+  select(Neighbourhood, asr_lim_at, diabetes_asr) %>%
+  rename(
+    `Age-Standardized Low-Income Rate (%)` = asr_lim_at,
+    `Age-Standardized Diabetes Prevalence (%)` = diabetes_asr
+  ) %>%
+  tidyr::pivot_longer(cols = c(`Age-Standardized Low-Income Rate (%)`, `Age-Standardized Diabetes Prevalence (%)`), 
+                      names_to = "Metric", 
+                      values_to = "Value")
 
-```{r}
-# Top 10 neighborhoods with highest low-income percentage
-top_low_income <- income_selected %>%
-  arrange(desc(Low_Income_Percentage)) %>%
-  slice(1:10)
-
-ggplot(top_low_income, aes(x = reorder(Neighbourhood, Low_Income_Percentage), y = Low_Income_Percentage)) +
-  geom_segment(aes(xend = Neighbourhood, y = 0, yend = Low_Income_Percentage), color = "grey") +
-  geom_point(color = "steelblue", size = 4) +
-  coord_flip() +
-  labs(title = "Top 10 Neighborhoods with Highest Low-Income Percentage",
-       x = "Neighborhood",
-       y = "Low-Income Percentage (%)") +
-  theme_minimal(base_size = 14)
-
-```
-```{r}
-# Calculate mean values to use as quadrant dividers
-mean_income <- mean(merged_data$Low_Income_Percentage, na.rm = TRUE)
-mean_diabetes <- mean(merged_data$Diabetes_Rate, na.rm = TRUE)
-
-# Base scatter plot with quadrant lines
-ggplot(merged_data, aes(x = Low_Income_Percentage, y = Diabetes_Rate)) +
-  geom_point(aes(color = Diabetes_Rate), size = 4, alpha = 0.8) +
-  scale_color_gradient(low = "blue", high = "red") +
-
-  # Add vertical and horizontal lines to divide into quadrants
-  geom_vline(xintercept = mean_income, linetype = "dashed", color = "black", linewidth = 1) +
-  geom_hline(yintercept = mean_diabetes, linetype = "dashed", color = "black", linewidth = 1) +
-
-  # Add quadrant labels
-  annotate("text", x = mean_income - 5, y = mean_diabetes + 2, label = "Low Low-Income Percentage\nHigh Diabetes Rates", size = 5, hjust = 1, fontface = "bold") +
-  annotate("text", x = mean_income + 5, y = mean_diabetes + 2, label = "High Low-Income Percentage\nHigh Diabetes Rates", size = 5, hjust = 0, fontface = "bold") +
-  annotate("text", x = mean_income - 5, y = mean_diabetes - 2, label = "Low Low-Income Percentage\nLow Diabetes Rates", size = 5, hjust = 1, fontface = "bold") +
-  annotate("text", x = mean_income + 5, y = mean_diabetes - 2, label = "High Low-Income Percentage\nLow Diabetes Rates", size = 5, hjust = 0, fontface = "bold") +
-
-  labs(title = "Diabetes vs. Income by Neighborhood",
-       subtitle = "Quadrants Highlight Risk and Resilience Patterns",
-       x = "Low Income Percentage",
-       y = "Diabetes Rate (%)",
-       color = "Diabetes %") +
-  theme_minimal(base_size = 15) +
+# Box plot of Low-Income Rate and Diabetes Prevalence
+ggplot(merged_data_melt, aes(x = Metric, y = Value, fill = Metric)) +
+  geom_boxplot(alpha = 0.7) +
+  scale_fill_manual(values = c("#0072B2", "#D55E00")) +
+  labs(
+    title = "Distribution of Age-Standardized Low-Income Rate and Diabetes Prevalence",
+    x = "Metric",
+    y = "Rate (%)"
+  ) +
+  theme_minimal(base_size = 14) +
   theme(
-    plot.title = element_text(face = "bold", size = 18, hjust = 0.5),
-    plot.subtitle = element_text(size = 14, hjust = 0.5),
+  plot.title = element_text(face = "bold", size = 10, hjust = -0.5),
+  axis.title.x = element_text(face = "bold", size = 10),
+  axis.title.y = element_text(face = "bold", size = 10),
+  axis.text.x = element_text(size = 8, angle = 20, hjust = 0.5),  # smaller & angled
+  axis.text.y = element_text(size = 12),
+  legend.title = element_text(size = 10),
+  legend.text = element_text(size = 9),
+  legend.key.size = unit(0.4, "cm")  # Shrinks the box symbol next to legend text
+)
+
+# ---- STEP 10: Display Summary Statistics Table ----
+# Create a summary table with formatted values
+summary_table <- data.frame(
+  Metric = c(
+    "Age-Standardized Low-Income Rate Min", "Age-Standardized Low-Income Rate Q1", 
+    "Age-Standardized Low-Income Rate Median", "Age-Standardized Low-Income Rate Mean", 
+    "Age-Standardized Low-Income Rate Q3", "Age-Standardized Low-Income Rate Max",
+    "Age-Standardized Diabetes Prevalence Min", "Age-Standardized Diabetes Prevalence Q1", 
+    "Age-Standardized Diabetes Prevalence Median", "Age-Standardized Diabetes Prevalence Mean", 
+    "Age-Standardized Diabetes Prevalence Q3", "Age-Standardized Diabetes Prevalence Max"
+  ),
+  Value = c(
+    sprintf("%.2f", summary_stats$min_lim_at), sprintf("%.2f", summary_stats$q1_lim_at),
+    sprintf("%.2f", summary_stats$median_lim_at), sprintf("%.2f", summary_stats$mean_lim_at),
+    sprintf("%.2f", summary_stats$q3_lim_at), sprintf("%.2f", summary_stats$max_lim_at),
+    sprintf("%.2f", summary_stats$min_diabetes), sprintf("%.2f", summary_stats$q1_diabetes),
+    sprintf("%.2f", summary_stats$median_diabetes), sprintf("%.2f", summary_stats$mean_diabetes),
+    sprintf("%.2f", summary_stats$q3_diabetes), sprintf("%.2f", summary_stats$max_diabetes)
+  )
+)
+
+# Render the summary table using knitr::kable
+kable(summary_table, caption = "Summary Statistics for Age-Standardized Low-Income Rate and Diabetes Prevalence")
+
+
+```
+
+```{r}
+# ---- STEP : Scatter Plot with Correct ASR ----
+library(ggplot2)
+
+# ---- Ensure numeric columns ----
+merged_data_asr$asr_lim_at <- as.numeric(as.character(merged_data_asr$asr_lim_at))
+merged_data_asr$diabetes_asr <- as.numeric(as.character(merged_data_asr$diabetes_asr))
+
+# ---- Check for missing values ----
+# Check if any NAs or invalid entries are present after conversion
+summary(merged_data_asr)
+
+# ---- Remove rows with missing values ----
+merged_data_asr <- merged_data_asr %>%
+  filter(!is.na(asr_lim_at) & !is.na(diabetes_asr))
+
+
+# Calculate correlation between ASR LIM-AT and ASR Diabetes
+correlation_asr <- cor(
+  merged_data_asr$asr_lim_at,
+  merged_data_asr$diabetes_asr,
+  use = "complete.obs"
+)
+
+# Print the correlation
+print(paste("Correlation between Age-Standardized Low-Income Rate and Age-Standardized Diabetes Prevalence: ", round(correlation_asr, 2)))
+
+# Create Scatter Plot
+ggplot(merged_data_asr, aes(x = asr_lim_at, y = diabetes_asr, color = diabetes_asr)) +
+  geom_point(size = 4, alpha = 0.7) +
+  geom_smooth(method = "lm", se = TRUE, color = "black", linetype = "dashed") +
+  
+  # Apply a yellow-to-red gradient
+  scale_color_gradientn(colors = c("yellow", "orange", "red"), 
+                         limits = c(0, max(merged_data_asr$diabetes_asr, na.rm = TRUE))) +
+  
+  # Add correlation text to the plot
+  annotate("text", x = max(merged_data_asr$asr_lim_at) - 2,
+           y = max(merged_data_asr$diabetes_asr, na.rm = TRUE) - 1,
+           label = paste("Correlation: ", round(correlation_asr, 2)),
+           size = 10, fontface = "bold", color = "black", hjust = 1) +
+  
+  labs(
+    title = "Relationship Between Age-Standardized Low-Income Rate (LIM-AT) and Age-Standardized Diabetes Prevalence",
+    x = "Age-Standardized Low-Income Rate (LIM-AT) (%)",
+    y = "Age-Standardized Diabetes Prevalence (%)",
+    color = "Diabetes ASR (%)"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
+    axis.title = element_text(face = "bold"),
     legend.position = "right"
   )
 
 ```
+
 ```{r}
-# Calculate mean thresholds
-mean_income <- mean(merged_data$Low_Income_Percentage, na.rm = TRUE)
-mean_diabetes <- mean(merged_data$Diabetes_Rate, na.rm = TRUE)
+# ---- STEP 9: Top 5 Neighborhoods by LIM-AT and Diabetes ASR ----
 
-# Create quadrant labels
-merged_data$Quadrant <- with(merged_data, ifelse(
-  Low_Income_Percentage >= mean_income & Diabetes_Rate >= mean_diabetes, "Low Income + High Diabetes",
-  ifelse(Low_Income_Percentage < mean_income & Diabetes_Rate >= mean_diabetes, "High Income + High Diabetes",
-  ifelse(Low_Income_Percentage >= mean_income & Diabetes_Rate < mean_diabetes, "Low Income + Low Diabetes",
-         "High Income + Low Diabetes"))))
+# Top 5 Neighborhoods by LIM-AT
+top_5_lim_at <- merged_data_asr %>%
+  arrange(desc(asr_lim_at)) %>%
+  slice(1:5)
 
-# Group by quadrant and list neighborhoods
-library(dplyr)
-neighborhoods_by_quadrant <- merged_data %>%
-  group_by(Quadrant) %>%
-  summarise(Neighborhoods = paste(Neighbourhood, collapse = ", "))
+# Top 5 Neighborhoods by Diabetes ASR
+top_5_diabetes <- merged_data_asr %>%
+  arrange(desc(diabetes_asr)) %>%
+  slice(1:5)
 
-# Print results
-print(neighborhoods_by_quadrant)
+# Plot Top 5 Neighborhoods by LIM-AT with percentage and two decimals
+ggplot(top_5_lim_at, aes(x = reorder(Neighbourhood, asr_lim_at), y = asr_lim_at)) +
+  geom_bar(stat = "identity", fill = "#0072B2", width = 0.6) +
+  geom_text(aes(label = paste0(sprintf("%.2f", asr_lim_at), "%")), 
+            hjust = 1.1,   # Adjust to place on the right inside bar
+            vjust = 0.5,   # Vertically center text
+            size = 5, 
+            color = "white") +  # White text for contrast
+  coord_flip() +
+  labs(
+    title = "Top 5 Neighborhoods by Age-Standardized Low-Income Rate (LIM-AT)",
+    x = "Neighbourhood",
+    y = "Age-Standardized Low-Income Rate (%)"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 11.5))
+
+# Plot Top 5 Neighborhoods by Diabetes ASR with percentage and two decimals
+ggplot(top_5_diabetes, aes(x = reorder(Neighbourhood, diabetes_asr), y = diabetes_asr)) +
+  geom_bar(stat = "identity", fill = "#D55E00", width = 0.6) +
+  geom_text(aes(label = paste0(sprintf("%.2f", diabetes_asr), "%")), 
+            hjust = 1.1,  # Adjust to place on the right inside bar
+            vjust = 0.5,  # Vertically center text
+            size = 5, 
+            color = "white") +  # White text for contrast
+  coord_flip() +
+  labs(
+    title = "Top 5 Neighborhoods by Age-Standardized Diabetes Prevalence",
+    x = "Neighbourhood",
+    y = "Age-Standardized Diabetes Prevalence (%)"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 11.5))
 
 ```
+
+
+```{r}
+# ---- STEP 1: Calculate Raw Prevalence for 18-64 and 65+ ----
+# Merge income_data and diabetes_data by Neighbourhood after cleaning
+merged_age_data <- inner_join(income_data, diabetes_data, by = "Neighbourhood")
+# ---- STEP 6: Aggregate Income and Diabetes Data by Age Group ----
+# Select relevant columns for 18-64 and 65+ age groups for LIM-AT and Diabetes
+income_summary <- income_data %>%
+  select(
+    Neighbourhood,
+    pop_18_65 = POPULATION.IN.LOW.INCOME.BASED.ON.LOW.INCOME.MEASURE...AFTER.TAX..LIM.AT..Total...Population.to.whom.Low.Income.Concepts.Are.Applicable..18.64.yrs.,
+    low_income_18_65 = POPULATION.IN.LOW.INCOME.BASED.ON.LOW.INCOME.MEASURE...AFTER.TAX..LIM.AT..In.LIM.AT...18.64.yrs.,
+    pop_65_plus = POPULATION.IN.LOW.INCOME.BASED.ON.LOW.INCOME.MEASURE...AFTER.TAX..LIM.AT..Total...Population.to.whom.Low.Income.Concepts.Are.Applicable..65..yrs.,
+    low_income_65_plus = POPULATION.IN.LOW.INCOME.BASED.ON.LOW.INCOME.MEASURE...AFTER.TAX..LIM.AT..In.LIM.AT...65..yrs.
+  )
+
+# ---- STEP 7: Calculate Low-Income Percentage for 18-64 and 65+ ----
+income_summary <- income_summary %>%
+  mutate(
+    low_income_rate_18_65 = (low_income_18_65 / pop_18_65) * 100,
+    low_income_rate_65_plus = (low_income_65_plus / pop_65_plus) * 100
+  )
+
+# ---- STEP 8: Select Relevant Diabetes Columns ----
+diabetes_summary <- diabetes_data %>%
+  select(
+    Neighbourhood,
+    diabetes_rate_20_44 = Prevalence...100..of.Diabetes.2021.22..Age.20.44.Total,
+    diabetes_rate_45_65 = Prevalence...100..of.Diabetes.2021.22..Age.45.64.Total,
+    diabetes_rate_65_plus = Prevalence...100..of.Diabetes.2021.22..Age.65..Total
+  )
+
+# ---- STEP 9: Merge Income and Diabetes Summary ----
+merged_summary <- inner_join(income_summary, diabetes_summary, by = "Neighbourhood")
+
+# ---- Convert Relevant Columns to Numeric ----
+merged_summary <- merged_summary %>%
+  mutate(
+    across(
+      c(
+        diabetes_rate_20_44, diabetes_rate_45_65, diabetes_rate_65_plus,
+        pop_18_65, pop_65_plus, low_income_18_65, low_income_65_plus
+      ),
+      as.numeric
+    )
+  )
+
+
+
+# ---- A. Calculate Total Population by Age Group ----
+totalPop_18_64 <- sum(merged_summary$pop_18_65, na.rm = TRUE)
+totalPop_65_Plus <- sum(merged_summary$pop_65_plus, na.rm = TRUE)
+
+# ---- B. Calculate Total People with Diabetes by Age Group ----
+# For 18-64, use sum of diabetes cases from 20-44 and 45-64 groups
+totalDiabetes_18_64 <- sum(
+  (merged_summary$diabetes_rate_20_44 / 100) * merged_summary$pop_18_65,
+  (merged_summary$diabetes_rate_45_65 / 100) * merged_summary$pop_18_65,
+  na.rm = TRUE
+)
+
+# For 65+, use total diabetes cases in 65+ group
+totalDiabetes_65_Plus <- sum(
+  (merged_summary$diabetes_rate_65_plus / 100) * merged_summary$pop_65_plus,
+  na.rm = TRUE
+)
+
+# ---- C. Calculate Raw Diabetes Prevalence ----
+diabetesPrevalence_18_64 <- (totalDiabetes_18_64 / totalPop_18_64) * 100
+diabetesPrevalence_65_Plus <- (totalDiabetes_65_Plus / totalPop_65_Plus) * 100
+
+# ---- D. Calculate Total People in Low-Income by Age Group ----
+totalLowIncome_18_64 <- sum(merged_summary$low_income_18_65, na.rm = TRUE)
+totalLowIncome_65_Plus <- sum(merged_summary$low_income_65_plus, na.rm = TRUE)
+
+# ---- E. Calculate Raw Low-Income Prevalence ----
+lowIncomePrevalence_18_64 <- (totalLowIncome_18_64 / totalPop_18_64) * 100
+lowIncomePrevalence_65_Plus <- (totalLowIncome_65_Plus / totalPop_65_Plus) * 100
+
+# ---- STEP 2: Print Raw Prevalence Results ----
+cat("Raw Prevalence Summary:\n")
+cat("Diabetes Prevalence (18-64):", round(diabetesPrevalence_18_64, 2), "%\n")
+cat("Diabetes Prevalence (65+):", round(diabetesPrevalence_65_Plus, 2), "%\n")
+cat("Low-Income Rate (18-64):", round(lowIncomePrevalence_18_64, 2), "%\n")
+cat("Low-Income Rate (65+):", round(lowIncomePrevalence_65_Plus, 2), "%\n")
+
+# ---- STEP 3: Create Summary Table for Visualization ----
+rawPrevalenceSummary <- data.frame(
+  Group = c("18-64", "65+"),
+  DiabetesPrevalence = c(diabetesPrevalence_18_64, diabetesPrevalence_65_Plus),
+  LowIncomeRate = c(lowIncomePrevalence_18_64, lowIncomePrevalence_65_Plus)
+)
+
+# ---- STEP 4: Plot Raw Prevalence Comparison ----
+library(reshape2)
+
+# Reshape data for plotting
+rawPrevalencePlot <- melt(rawPrevalenceSummary, id.vars = "Group")
+
+# Create bar plot with percentage labels
+ggplot(rawPrevalencePlot, aes(x = Group, y = value, fill = variable)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.7), width = 0.6) +
+  geom_text(aes(label = paste0(sprintf("%.2f", value), "%")), 
+            position = position_dodge(width = 0.7), 
+            vjust = -0.5, 
+            size = 4, 
+            fontface = "bold") +
+  labs(
+    title = "Comparison of Diabetes Prevalence and Low-Income Rate by Age Group",
+    x = "Age Group",
+    y = "Rate (%)",
+    fill = "Metric"
+  ) +
+  scale_fill_manual(
+    values = c("DiabetesPrevalence" = "#D55E00", "LowIncomeRate" = "#0072B2"),
+    labels = c("Diabetes Prevalence", "Low-Income Rate")
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 10))
+
+```
+
+```{r}
+# ---- STEP 13: Pie Chart for Diabetes Prevalence ----
+library(ggplot2)
+
+# Define threshold for high/low diabetes prevalence (6.1%)
+threshold_diabetes <- 6.1
+
+# Create a categorical column based on diabetes ASR threshold
+merged_data_asr <- merged_data_asr %>%
+  mutate(
+    diabetes_category = ifelse(diabetes_asr < threshold_diabetes, "Low Prevalence", "High Prevalence")
+  )
+
+# Summarize counts for each category
+diabetes_pie_data <- merged_data_asr %>%
+  count(diabetes_category) %>%
+  mutate(percentage = (n / sum(n)) * 100)
+
+# Create Pie Chart
+ggplot(diabetes_pie_data, aes(x = "", y = percentage, fill = diabetes_category)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start = 0) +
+  labs(
+    title = "Proportion of Neighborhoods by Diabetes Prevalence (Threshold: 6.1%)",
+    x = "",
+    y = "",
+    fill = "Diabetes Prevalence Category"
+  ) +
+  geom_text(aes(label = paste0(round(percentage, 1), "%")),
+            position = position_stack(vjust = 0.5),
+            size = 8, fontface = "bold") +
+  scale_fill_manual(values = c("High Prevalence" = "#D55E00", "Low Prevalence" = "#0072B2")) +
+  theme_void(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
+    legend.title = element_text(face = "bold"),
+    legend.position = "right"
+  )
+
+```
+
 
